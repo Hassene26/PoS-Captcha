@@ -1,54 +1,65 @@
-#[derive(Debug, Clone)]
-pub struct NotifyNode {
-    pub buff: Vec<u8>,
-    pub notification: Notification,
+use serde::{Deserialize, Serialize};
+
+/// Possible states of the prover service.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum ServiceState {
+    Idle,
+    Plotting,
+    Ready,
+    Proving,
+    Error,
 }
 
-impl NotifyNode {
-    pub fn new(buff: Vec<u8>, variant: Notification) -> NotifyNode {
-        NotifyNode {
-            buff,
-            notification: variant, // Replace with your actual variant
-        }
-    }
+/// Status response returned by the prover's /status endpoint.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct StatusResponse {
+    pub state: ServiceState,
+    pub disk_used_mb: u64,
+    pub plot_progress: u8,
+    pub num_block_groups: u64,
 }
 
-#[derive(Debug, Copy, Clone)]
-pub enum Notification {
-    Start,
-    Stop,
-    Update,
-    Collect_Block_Hashes,
-    Verification_Time,
-    Verification_Correctness,
-    Create_Inclusion_Proofs,
-    Handle_Inclusion_Proof,
-    Handle_Prover_commitment,
-    Terminate,
+/// Challenge request sent by the browser proxy.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ChallengeRequest {
+    pub seed: u8,
+    pub session_id: String,
 }
 
-#[derive(Debug, Clone)]
-pub enum Verification_Status {
-    Executing,
-    Terminated,
+/// Proof batch response returned after a challenge.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ChallengeResponse {
+    pub proof_bytes: Vec<u8>,
+    pub seed: u8,
+    pub iteration: u64,
 }
 
-#[derive(Debug, Clone)]
-pub enum Fairness {
-    Undecided,
-    Successful,
-    Failure(Failure_Reason),
+/// Request for inclusion proofs from the verifier.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct InclusionProofRequest {
+    /// List of (block_id, position) pairs to generate proofs for.
+    pub targets: Vec<(u32, u32)>,
 }
 
-#[derive(Debug, Clone)]
-pub enum Failure_Reason {
-    Timeout,
-    Incorrect,
+/// A single inclusion proof for a (block_id, position).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct InclusionProofEntry {
+    pub block_id: u32,
+    pub position: u32,
+    pub root_hash: [u8; 32],
+    pub self_fragment: [u8; 32],
+    pub proof: crate::merkle_tree::structs::Proof,
 }
 
-#[derive(Debug, Clone)]
-pub enum Time_Verification_Status {
-    Insufficient_Proofs,
-    Correct,
-    Incorrect,
+/// Response containing all requested inclusion proofs.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct InclusionProofResponse {
+    pub proofs: Vec<InclusionProofEntry>,
+}
+
+/// Commitment (root hashes for all block groups).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CommitmentResponse {
+    pub root_hashes: Vec<[u8; 32]>,
+    pub num_block_groups: u64,
 }
