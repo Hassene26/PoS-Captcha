@@ -1,0 +1,9 @@
+{
+  "port": 7331,
+  "storage_size_mb": 64,
+  "plot_path": "output.bin",
+  "allowed_origins": [
+    "http://localhost:3000",
+    "http://127.0.0.1:3000"
+  ]
+}

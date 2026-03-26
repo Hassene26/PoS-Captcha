@@ -1,0 +1,7 @@
+c:\Users\MSI\Desktop\MA2\PoS\PoS-Captcha\prover\target_cli\release\deps\futures_sink-8ed345a997f570bd.d: C:\Users\MSI\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\futures-sink-0.3.32\src\lib.rs
+
+c:\Users\MSI\Desktop\MA2\PoS\PoS-Captcha\prover\target_cli\release\deps\libfutures_sink-8ed345a997f570bd.rlib: C:\Users\MSI\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\futures-sink-0.3.32\src\lib.rs
+
+c:\Users\MSI\Desktop\MA2\PoS\PoS-Captcha\prover\target_cli\release\deps\libfutures_sink-8ed345a997f570bd.rmeta: C:\Users\MSI\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\futures-sink-0.3.32\src\lib.rs
+
+C:\Users\MSI\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\futures-sink-0.3.32\src\lib.rs:
