@@ -1,2 +1,2 @@
-pub mod client_verify;
 pub mod structs;
+pub mod client_verify;

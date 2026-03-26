@@ -1,50 +1,33 @@
 use serde::{Deserialize, Serialize};
 
-#[derive(Serialize, Deserialize, Debug, PartialEq)]
+/// Direction of a sibling in a Merkle proof path.
+#[derive(Serialize, Deserialize, Debug, PartialEq, Clone)]
 pub enum Direction {
     Left,
     Right,
 }
 
-#[derive(Debug)]
+/// A sibling node in a Merkle inclusion proof.
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Sibling {
-    hash: blake3::Hash,
-    direction: Direction,
+    pub hash: [u8; 32],
+    pub direction: Direction,
 }
 
 impl Sibling {
-    /// Returns a new Sibling.
-    pub fn new(h: blake3::Hash, d: Direction) -> Sibling {
-        Sibling {
-            hash: h,
-            direction: d,
-        }
-    }
-
-    /// Returns the direction associated with the Sibling invoking the method.
-    pub fn get_direction(&self) -> &Direction {
-        &self.direction
-    }
-
-    /// Returns the Hash associated with the Sibling invoking the method.
-    pub fn get_hash(&self) -> &blake3::Hash {
-        &self.hash
+    pub fn new(hash: [u8; 32], direction: Direction) -> Sibling {
+        Sibling { hash, direction }
     }
 }
 
-#[derive(Debug)]
+/// A Merkle inclusion proof consisting of sibling nodes.
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Proof {
-    siblings: Vec<Sibling>,
+    pub siblings: Vec<Sibling>,
 }
 
 impl Proof {
-    /// Returns a new Proof.
-    pub fn new(s: Vec<Sibling>) -> Proof {
-        Proof { siblings: s }
-    }
-
-    /// Returns a reference to the vector of Siblings associated with the Proof invoking the method.
-    pub fn get_siblings(&self) -> &Vec<Sibling> {
-        &self.siblings
+    pub fn new(siblings: Vec<Sibling>) -> Proof {
+        Proof { siblings }
     }
 }
