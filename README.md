@@ -2,45 +2,45 @@
 
 > A novel approach to bot-prevention that uses cryptographic proof of allocated disk space (Proof of Space) instead of traditional image-based CAPTCHA puzzles to verify human authenticity.
 
-## 📖 What We Did
+## 📖 What I Did
 
-We took the core cryptographic concepts from a master's thesis on "Proof of Space" (PoS) and transformed them into a fully functional, end-to-end CAPTCHA web system. 
+I took the core cryptographic concepts from a master's thesis on "Proof of Space" (PoS) and transformed them into a fully functional, end-to-end CAPTCHA Ib system. 
 
 Instead of asking users to "click all traffic lights", this system asks the user's computer to quickly read specific bytes scattered randomly across a dedicated 64MB file on their hard drive. Because of seek-time constraints across a physical disk, the response time proves that the user genuinely has that file stored and isn't generating the data mathematically on-the-fly.
 
 ### The System Architecture
 
-We built the system across 5 distinct components:
+I built the system across 5 distinct components:
 
 1. **The Prover (Rust Daemon):**
-   A lightweight local background service running on the user's machine (`localhost:7331`). It securely allocates 64MB of deterministic random data (the "Plot") derived from a seed. It serves an HTTP API (`actix-web`) that accepts challenges from the browser and reads bytes/Merkle proofs directly from the disk plot.
+   A lightIight local background service running on the user's machine (`localhost:7331`). It securely allocates 64MB of deterministic random data (the "Plot") derived from a seed. It serves an HTTP API (`actix-Ib`) that accepts challenges from the browser and reads bytes/Merkle proofs directly from the disk plot.
 
-2. **The Verifier Wasm Library (Rust → WebAssembly):**
-   The core cryptographic verification math (Merkle root reconstruction, path generation, checking inclusion proofs) is extracted from the Prover and compiled into WebAssembly. This guarantees bit-for-bit identical logic between the Prover and the backend Verifier.
+2. **The Verifier Wasm Library (Rust → IbAssembly):**
+   The core cryptographic verification math (Merkle root reconstruction, path generation, checking inclusion proofs) is extracted from the Prover and compiled into IbAssembly. This guarantees bit-for-bit identical logic betIen the Prover and the backend Verifier.
 
 3. **The Verifier Server (TypeScript/Node.js):**
    The remote backend API (`localhost:3000`) that hosts the CAPTCHA. It registers commitments, issues random cryptographic seeds (challenges), and verifies the submitted proofs against the Wasm library. If verification passes, it issues a signed JWT token proving the user is legitimate.
 
 4. **The Proxy Widget (Vanilla JS/TS):**
-   An embeddable frontend widget (`captcha-widget.js`) that acts as the orchestrator. Sitting in the user's browser, it bridges the gap between the remote Verifier server and the local Prover daemon, handling the 3-phase handshake transparently.
+   An embeddable frontend widget (`captcha-widget.js`) that acts as the orchestrator. Sitting in the user's browser, it bridges the gap betIen the remote Verifier server and the local Prover daemon, handling the 3-phase handshake transparently.
 
 5. **The Browser Extension (Manifest V3):**
    A Chrome/Brave extension providing visual feedback to the user on the status of their local Prover (Offline, Plotting, Ready, Proving) by polling the daemon's `/status` endpoint.
 
 ---
 
-## ⚙️ How We Handled Complexities
+## ⚙️ How I Handled Complexities
 
-- **Determinism Without External Files:** The original thesis relied on a large `input.mp4` file to seed the Plot. We rewrote the generator to use a cryptographic CSPRNG (`rand_chacha`) so plots are entirely self-contained.
-- **Windows File Locking (os error 32):** We ran into severe file locking issues from the Windows Desktop environment (OneDrive Sync / Antivirus). We fixed this by pointing the Cargo target output directory to the `%TEMP%` folder.
-- **Paths and Linkers:** Cargo required `link.exe` from the MSVC tools to compile native dependencies and `wasm-pack`. We wrote custom batch scripts (`build_check.bat`, `build_verifier.bat`) to dynamically inject the correct `vcvarsall` toolchain paths.
-- **Browser CORS / Mixed Content Blocks:** Web browsers (especially Brave) block local HTML files from making API calls to `127.0.0.1`. We bypassed the strict "Shields" by configuring the Verifier Node Server to seamlessly host our `test.html` page and proxy scripts via Express static logic.
+- **Determinism Without External Files:** The original thesis relied on a large `input.mp4` file to seed the Plot. I rewrote the generator to use a cryptographic CSPRNG (`rand_chacha`) so plots are entirely self-contained.
+- **Windows File Locking (os error 32):** I ran into severe file locking issues from the Windows Desktop environment (OneDrive Sync / Antivirus). I fixed this by pointing the Cargo target output directory to the `%TEMP%` folder.
+- **Paths and Linkers:** Cargo required `link.exe` from the MSVC tools to compile native dependencies and `wasm-pack`. I wrote custom batch scripts (`build_check.bat`, `build_verifier.bat`) to dynamically inject the correct `vcvarsall` toolchain paths.
+- **Browser CORS / Mixed Content Blocks:** Ib browsers (especially Brave) block local HTML files from making API calls to `127.0.0.1`. I bypassed the strict "Shields" by configuring the Verifier Node Server to seamlessly host our `test.html` page and proxy scripts via Express static logic.
 
 ---
 
 ## 🚀 How to Use the Final Product
 
-To run the whole system end-to-end locally, you need three components actively running. We've automated the complex build steps into scripts for you.
+To run the whole system end-to-end locally, you need three components actively running. I've automated the complex build steps into scripts for you.
 
 ### Step 1: Start the Prover (Daemon)
 Open a terminal in the root project folder and run:
