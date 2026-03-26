@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>PoS-CAPTCHA Demo</title>
+  <style>
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background: #f8fafc;
+      color: #0f172a;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding-top: 50px;
+    }
+    .card {
+      background: white;
+      padding: 30px;
+      border-radius: 12px;
+      box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1);
+      width: 400px;
+      text-align: center;
+    }
+    .form-group {
+      margin-bottom: 20px;
+      text-align: left;
+    }
+    input {
+      width: 100%;
+      padding: 10px;
+      border: 1px solid #cbd5e1;
+      border-radius: 6px;
+      margin-top: 6px;
+      box-sizing: border-box;
+    }
+    button[type="submit"] {
+      background: #3b82f6;
+      color: white;
+      border: none;
+      padding: 12px;
+      width: 100%;
+      border-radius: 6px;
+      font-weight: 600;
+      cursor: pointer;
+      margin-top: 10px;
+    }
+    button[type="submit"]:disabled {
+      background: #94a3b8;
+      cursor: not-allowed;
+    }
+    #result {
+      margin-top: 15px;
+      font-size: 14px;
+      color: #10b981;
+      font-weight: 600;
+      word-break: break-all;
+    }
+  </style>
+</head>
+<body>
+
+  <div class="card">
+    <h2>Secure Login</h2>
+    <p style="color: #64748b; font-size: 14px; margin-bottom: 25px;">
+      Please prove your storage allocation to continue.
+    </p>
+
+    <div class="form-group">
+      <label>Email Address</label>
+      <input type="email" value="user@example.com">
+    </div>
+    
+    <div class="form-group">
+      <label>Password</label>
+      <input type="password" value="password123">
+    </div>
+
+    <!-- The PoS-CAPTCHA Widget Container -->
+    <div id="pos-widget" style="margin-bottom: 20px;"></div>
+
+    <button id="submitBtn" type="submit" disabled>Login</button>
+    <div id="result"></div>
+  </div>
+
+  <!-- Load the compiled widget -->
+  <script src="proxy/captcha-widget.js"></script>
+  
+  <script>
+    // Initialize the widget
+    PoSCaptcha.init({
+      element: '#pos-widget',
+      verifierUrl: 'http://localhost:3000',
+      proverUrl: 'http://127.0.0.1:7331',
+      clientId: 'demo-user-' + Math.floor(Math.random() * 10000),
+      
+      onSuccess: (token) => {
+        // Enable the submit button when verification passes
+        document.getElementById('submitBtn').disabled = false;
+        document.getElementById('result').innerText = "JWT Token Received:\n" + token.substring(0, 30) + "...";
+      },
+      onError: (err) => {
+        document.getElementById('submitBtn').disabled = true;
+        document.getElementById('result').innerText = "";
+        console.error("Verification failed:", err);
+      }
+    });
+
+    document.getElementById('submitBtn').addEventListener('click', () => {
+      alert("Login successful! The PoS proof was valid.");
+    });
+  </script>
+</body>
+</html>
