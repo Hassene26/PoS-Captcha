@@ -130,46 +130,38 @@ const PoSCaptcha = {
                 body: JSON.stringify({ clientId }),
             });
             const challenge = await challengeResp.json();
-            // Step 4: Forward challenge to local Prover
+            // Step 4: Forward encrypted challenge to local Prover
             const proofResp = await fetch(`${proverUrl}/challenge`, {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    seed: challenge.seed,
-                    session_id: challenge.sessionId,
-                }),
+                headers: { 'Content-Type': 'text/plain' },
+                body: challenge.encryptedChallengeBlob,
             });
-            const proofData = await proofResp.json();
-            // Step 5: Submit proof to Verifier
+            const encryptedProofBlob = await proofResp.text();
+            // Step 5: Submit encrypted proof back to Verifier
             const submitResp = await fetch(`${verifierUrl}/api/challenge/submit`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     sessionId: challenge.sessionId,
-                    proofBytes: proofData.proof_bytes,
-                    seed: proofData.seed,
-                    iteration: proofData.iteration,
+                    encryptedProofBlob,
                 }),
             });
             const submitResult = await submitResp.json();
             // Step 6: Request and submit inclusion proofs
-            // The Verifier needs inclusion proofs for a sample of the submitted bytes
-            // For now, request proofs for a few random (block_id, position) pairs
+            // The Verifier sends an AES encrypted blob containing the targets it wants to sample
             const inclusionResp = await fetch(`${proverUrl}/inclusion-proofs`, {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    targets: submitResult.sampleTargets || [], // The verifier would tell us which to prove
-                }),
+                headers: { 'Content-Type': 'text/plain' },
+                body: submitResult.encryptedTargetsBlob,
             });
-            const inclusionData = await inclusionResp.json();
-            // Step 7: Submit inclusion proofs for final verification
+            const encryptedInclusionBlob = await inclusionResp.text();
+            // Step 7: Submit encrypted inclusion proofs for final verification
             const verifyResp = await fetch(`${verifierUrl}/api/verify/inclusion`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     sessionId: challenge.sessionId,
-                    inclusionProofs: inclusionData.proofs || [],
+                    encryptedInclusionBlob,
                 }),
             });
             const verifyResult = await verifyResp.json();
