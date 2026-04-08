@@ -1,5 +1,8 @@
 import { Router, Request, Response } from 'express';
-import { sessionStore, issueToken } from '../session';
+import { sessionStore, issueToken, verifyToken } from '../session';
+import { verifyInclusionProof, verifyTimeBound } from '../../native';
+import { decryptAES } from '../crypto';
+import { Buffer } from 'buffer';
 
 export const verifyRouter = Router();
 
@@ -26,11 +29,20 @@ export const verifyRouter = Router();
  * For now, we perform a simplified check and demonstrate the flow.
  */
 verifyRouter.post('/inclusion', (req: Request, res: Response) => {
-  const { sessionId, inclusionProofs } = req.body;
+  const { sessionId, encryptedInclusionBlob } = req.body;
 
-  if (!sessionId || !inclusionProofs) {
-    return res.status(400).json({ error: 'Missing sessionId or inclusionProofs' });
+  if (!sessionId || !encryptedInclusionBlob) {
+    return res.status(400).json({ error: 'Missing sessionId or encryptedInclusionBlob' });
   }
+
+  let inclusionData;
+  try {
+    inclusionData = decryptAES(encryptedInclusionBlob);
+  } catch (err) {
+    return res.status(400).json({ error: 'Failed to decrypt inclusion blob' });
+  }
+  
+  const inclusionProofs = inclusionData.proofs;
 
   const session = sessionStore.get(sessionId);
   if (!session) {
@@ -48,12 +60,9 @@ verifyRouter.post('/inclusion', (req: Request, res: Response) => {
 
   // ========== Temporal Integrity Check ==========
   const elapsedMs = (session.proofReceivedAt || Date.now()) - (session.challengeIssuedAt || 0);
-  const elapsedMicros = elapsedMs * 1000;
-  const numProofs = session.proofBytes?.length || 0;
-
-  // Simplified time check: ensure response came within 2 seconds
-  // In production, use the Wasm verify_time_bound() function
-  const timeCheckPassed = elapsedMs < 2000;
+  
+  // Call the native Rust verification for the 2000ms bound
+  const timeCheckPassed = verifyTimeBound(elapsedMs);
 
   // ========== Cryptographic Correctness Check ==========
   // Verify each inclusion proof against the committed root hashes.
@@ -80,10 +89,20 @@ verifyRouter.post('/inclusion', (req: Request, res: Response) => {
     } else if (!merkleProof || !merkleProof.siblings || merkleProof.siblings.length === 0) {
       reason = 'Empty Merkle proof';
     } else {
-      // TODO: In production, call Wasm verify_inclusion_proof() here
-      // For now, mark as valid if root hash matches commitment
-      valid = true;
-      reason = 'Root hash matches commitment (full Merkle verification pending Wasm integration)';
+      try {
+        const rootHashBuf = Buffer.from(root_hash);
+        const formattedSiblings = merkleProof.siblings.map((sib: any) => ({
+          hash: Buffer.from(sib.hash),
+          direction: sib.direction
+        }));
+        
+        const selfFragmentBuf = Buffer.from(self_fragment || []);
+        
+        valid = verifyInclusionProof(selfFragmentBuf, formattedSiblings, rootHashBuf);
+        reason = valid ? 'Verified securely via Native Rust binding' : 'Inclusion proof mathematically invalid';
+      } catch (err) {
+        reason = `Native binding err: ${err}`;
+      }
     }
 
     if (!valid) {
@@ -144,9 +163,9 @@ verifyRouter.post('/token', (req: Request, res: Response) => {
     return res.status(400).json({ error: 'Missing token' });
   }
 
-  const decoded = require('jsonwebtoken').verify(token, process.env.JWT_SECRET || 'pos-captcha-secret-change-in-production');
+  const decoded = verifyToken(token);
   if (!decoded) {
-    return res.status(401).json({ valid: false, error: 'Invalid or expired token' });
+    return res.status(401).json({ valid: false, error: 'Invalid token, expired, or maximum usage limit reached.' });
   }
 
   res.json({ valid: true, decoded });

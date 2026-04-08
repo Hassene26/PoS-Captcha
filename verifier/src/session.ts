@@ -30,6 +30,8 @@ export interface CommitmentData {
 class SessionStore {
   private sessions: Map<string, SessionData> = new Map();
   private commitments: Map<string, CommitmentData> = new Map(); // clientId -> commitment
+  private tokenUses: Map<string, number> = new Map();
+  private readonly NB_MAX = 5; // Max allowed uses for a single token
 
   create(seed: number): SessionData {
     const sessionId = require('uuid').v4();
@@ -70,6 +72,21 @@ class SessionStore {
   getCommitment(clientId: string): CommitmentData | undefined {
     return this.commitments.get(clientId);
   }
+
+  // Stateful Token Management
+  registerToken(tokenId: string): void {
+    this.tokenUses.set(tokenId, 0);
+  }
+
+  incrementTokenUsage(tokenId: string): boolean {
+    const uses = this.tokenUses.get(tokenId);
+    if (uses === undefined) return false; // Token was never issued by this server
+    if (uses >= this.NB_MAX) return false; // Exceeded NB_MAX limit
+    
+    this.tokenUses.set(tokenId, uses + 1);
+    console.log(`[TokenTracker] Token ${tokenId} used ${uses + 1}/${this.NB_MAX} times.`);
+    return true;
+  }
 }
 
 export const sessionStore = new SessionStore();
@@ -78,8 +95,12 @@ export const sessionStore = new SessionStore();
  * Issue a signed TTL token for a verified client.
  */
 export function issueToken(sessionId: string, clientId: string): string {
+  const tokenId = require('uuid').v4();
+  sessionStore.registerToken(tokenId);
+
   return jwt.sign(
     {
+      jti: tokenId,
       sessionId,
       clientId,
       verified: true,
@@ -91,11 +112,22 @@ export function issueToken(sessionId: string, clientId: string): string {
 }
 
 /**
- * Verify a TTL token.
+ * Verify a TTL token AND enforce the stateful NB_MAX usage limit.
  */
 export function verifyToken(token: string): any {
   try {
-    return jwt.verify(token, JWT_SECRET);
+    const decoded = jwt.verify(token, JWT_SECRET) as any;
+    
+    // Check stateful usage limit
+    if (decoded && decoded.jti) {
+      const isValidUsage = sessionStore.incrementTokenUsage(decoded.jti);
+      if (!isValidUsage) {
+        console.warn(`[TokenTracker] Token ${decoded.jti} rejected (Usage limit exceeded or unknown).`);
+        return null;
+      }
+    }
+
+    return decoded;
   } catch {
     return null;
   }

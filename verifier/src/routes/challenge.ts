@@ -1,5 +1,7 @@
 import { Router, Request, Response } from 'express';
 import { sessionStore } from '../session';
+import { encryptAES, decryptAES } from '../crypto';
+import { randomPathGenerator } from '../../native';
 
 export const challengeRouter = Router();
 
@@ -44,11 +46,14 @@ challengeRouter.post('/issue', (req: Request, res: Response) => {
 
   sessionStore.update(session.sessionId, session);
 
-  console.log(`[Challenge] Issued challenge: session=${session.sessionId}, seed=${seed}, client=${clientId}`);
+  console.log(`[Challenge] Issued challenge: session=${session.sessionId}, client=${clientId}`);
+
+  const payloadToEncrypt = { seed, session_id: session.sessionId };
+  const encryptedChallengeBlob = encryptAES(payloadToEncrypt);
 
   res.json({
     sessionId: session.sessionId,
-    seed,
+    encryptedChallengeBlob,
   });
 });
 
@@ -66,10 +71,10 @@ challengeRouter.post('/issue', (req: Request, res: Response) => {
  * }
  */
 challengeRouter.post('/submit', (req: Request, res: Response) => {
-  const { sessionId, proofBytes, seed, iteration } = req.body;
+  const { sessionId, encryptedProofBlob } = req.body;
 
-  if (!sessionId || !proofBytes) {
-    return res.status(400).json({ error: 'Missing sessionId or proofBytes' });
+  if (!sessionId || !encryptedProofBlob) {
+    return res.status(400).json({ error: 'Missing sessionId or encryptedProofBlob' });
   }
 
   const session = sessionStore.get(sessionId);
@@ -81,9 +86,18 @@ challengeRouter.post('/submit', (req: Request, res: Response) => {
     return res.status(400).json({ error: `Invalid session status: ${session.status}` });
   }
 
+  let proofData;
+  try {
+    proofData = decryptAES(encryptedProofBlob);
+  } catch (err) {
+    return res.status(400).json({ error: 'Failed to decrypt proof blob' });
+  }
+
+  const { proof_bytes, seed, iteration } = proofData;
+
   // Record the proof and timing
   session.proofReceivedAt = Date.now();
-  session.proofBytes = proofBytes;
+  session.proofBytes = proof_bytes;
   session.expectedSeed = seed;
   session.expectedIteration = iteration;
   session.status = 'verifying';
@@ -91,13 +105,38 @@ challengeRouter.post('/submit', (req: Request, res: Response) => {
 
   const elapsedMs = session.proofReceivedAt - (session.challengeIssuedAt || session.proofReceivedAt);
 
-  console.log(`[Challenge] Proof received: session=${sessionId}, ${proofBytes.length} bytes, elapsed=${elapsedMs}ms`);
+  console.log(`[Challenge] Proof received: session=${sessionId}, ${proof_bytes.length} bytes, elapsed=${elapsedMs}ms`);
+
+  // Now, we must demand cryptographic inclusion proofs for a sample of the bytes read.
+  // Instead of a dummy target, we use the Native Rust binding to accurately recreate 
+  // the exact deterministic paths the Prover travelled using the original seed.
+  const numBlockGroups = session.commitment!.numBlockGroups;
+  const originalSeed = session.seed;
+  const BATCH_SIZE = 70; // Must match Prover
+  
+  const allPaths = randomPathGenerator(originalSeed, BATCH_SIZE, numBlockGroups);
+  
+  // Sample 1% of the queried bytes (minimum 1 target) to verify their Merkle Inclusion
+  const VERIFIABLE_RATIO = 0.01;
+  const sampleSize = Math.max(1, Math.floor(BATCH_SIZE * VERIFIABLE_RATIO));
+  const selectedTargets = [];
+
+  for (let i = 0; i < sampleSize; i++) {
+    const randomIdx = Math.floor(Math.random() * allPaths.length);
+    const target = allPaths[randomIdx];
+    selectedTargets.push([target.blockId, target.index]);
+    allPaths.splice(randomIdx, 1); // remove to prevent duplicates
+  }
+
+  const targetsPayload = { targets: selectedTargets };
+  const encryptedTargetsBlob = encryptAES(targetsPayload);
 
   res.json({
     sessionId,
     status: 'verifying',
     elapsedMs,
-    proofCount: proofBytes.length,
-    message: 'Proof received. Proceed to POST /api/verify/inclusion for correctness verification.',
+    proofCount: proof_bytes.length,
+    encryptedTargetsBlob,
+    message: 'Proof received. Proceed to POST /api/verify/inclusion.',
   });
 });

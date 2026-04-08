@@ -1,0 +1,1 @@
+C:\Users\MSI\Desktop\MA2\PoS\PoS-Captcha\verifier\native\target\release\pos_native.dll: C:\Users\MSI\Desktop\MA2\PoS\PoS-Captcha\verifier\native\build.rs C:\Users\MSI\Desktop\MA2\PoS\PoS-Captcha\verifier\native\src\lib.rs
