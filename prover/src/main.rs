@@ -4,6 +4,7 @@ mod communication;
 mod api;
 mod plotter;
 mod config;
+mod crypto;
 
 use actix_web::{web, App, HttpServer, middleware};
 use actix_cors::Cors;

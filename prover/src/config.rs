@@ -12,6 +12,8 @@ pub struct Config {
     pub plot_path: String,
     /// Allowed CORS origins (remote verifier domains)
     pub allowed_origins: Vec<String>,
+    /// AES-256-GCM symmetric key used to E2EE payloads with the Verifier
+    pub aes_secret_key: String,
 }
 
 impl Config {
@@ -24,6 +26,7 @@ impl Config {
                 String::from("http://localhost:3000"),
                 String::from("http://127.0.0.1:3000"),
             ],
+            aes_secret_key: String::from("pos-captcha-secret-key-32-bytes!"),
         }
     }
 

@@ -64,16 +64,26 @@ pub async fn get_commitment(data: web::Data<AppState>) -> HttpResponse {
 
 pub async fn handle_challenge(
     data: web::Data<AppState>,
-    body: web::Json<ChallengeRequest>,
+    body: String,
 ) -> HttpResponse {
-    info!("Challenge received: seed={}, session={}", body.seed, body.session_id);
+    let decrypted = match crate::crypto::decrypt_aes(&body, &data.config.aes_secret_key) {
+        Some(d) => d,
+        None => return HttpResponse::BadRequest().body("Invalid encrypted payload"),
+    };
+    
+    let req: ChallengeRequest = match serde_json::from_str(&decrypted) {
+        Ok(r) => r,
+        Err(_) => return HttpResponse::BadRequest().body("Invalid JSON"),
+    };
+
+    info!("Challenge received: seed={}, session={}", req.seed, req.session_id);
 
     // Set status to Proving
     {
         *data.status.lock().unwrap() = ServiceStatus::Proving;
     }
 
-    let mut seed = body.seed;
+    let mut seed = req.seed;
     let mut iteration: u64 = 0;
     let mut proof_batch: Vec<u8> = Vec::with_capacity(BATCH_SIZE);
 
@@ -99,20 +109,33 @@ pub async fn handle_challenge(
         iteration,
     };
 
-    HttpResponse::Ok().json(response)
+    let json_resp = serde_json::to_string(&response).unwrap();
+    let encrypted_resp = crate::crypto::encrypt_aes(&json_resp, &data.config.aes_secret_key);
+
+    HttpResponse::Ok().body(encrypted_resp)
 }
 
 // ============ /inclusion-proofs ============
 
 pub async fn handle_inclusion_proofs(
     data: web::Data<AppState>,
-    body: web::Json<InclusionProofRequest>,
+    body: String,
 ) -> HttpResponse {
-    info!("Inclusion proof request: {} targets", body.targets.len());
+    let decrypted = match crate::crypto::decrypt_aes(&body, &data.config.aes_secret_key) {
+        Some(d) => d,
+        None => return HttpResponse::BadRequest().body("Invalid encrypted payload"),
+    };
+    
+    let req: InclusionProofRequest = match serde_json::from_str(&decrypted) {
+        Ok(r) => r,
+        Err(_) => return HttpResponse::BadRequest().body("Invalid JSON"),
+    };
+
+    info!("Inclusion proof request: {} targets", req.targets.len());
 
     let mut proofs: Vec<InclusionProofEntry> = Vec::new();
 
-    for &(block_id, position) in &body.targets {
+    for &(block_id, position) in &req.targets {
         let mut buffer = vec![0u8; HASH_BYTES_LEN + NUM_BYTES_IN_BLOCK_GROUP as usize];
         read_hash_and_block(&data.output_file, block_id, &mut buffer);
 
@@ -132,7 +155,11 @@ pub async fn handle_inclusion_proofs(
         });
     }
 
-    HttpResponse::Ok().json(InclusionProofResponse { proofs })
+    let response = InclusionProofResponse { proofs };
+    let json_resp = serde_json::to_string(&response).unwrap();
+    let encrypted_resp = crate::crypto::encrypt_aes(&json_resp, &data.config.aes_secret_key);
+
+    HttpResponse::Ok().body(encrypted_resp)
 }
 
 // ============ Helper Functions ============
