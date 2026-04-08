@@ -31,10 +31,10 @@ The original thesis used raw TCP sockets to communicate between Prover and Verif
 
 ---
 
-## 🛡️ 2. The Verifier WebAssembly Library (`/verifier/wasm`)
-*Written in Rust, compiled to Wasm.* 
+## 🛡️ 2. The Verifier Native Bindings (`/verifier/native`)
+*Written in Rust, compiled via NAPI-RS to a Node.js C++ Addon.* 
 Because the Prover is computing complex Merkle tree hashes and deterministic paths (`path_generator.rs`), the Node.js Verifier Backend must run the **exact** same logic to check the answers. Re-writing complex cryptographic byte-math in TypeScript is highly prone to subtle bugs.
-- **`wasm/src/lib.rs` [NEW]**: We copy-pasted the crucial `path_generator` and `merkle_tree` math directly from the Prover into this new Rust library. We then wrap it in the `#[wasm_bindgen]` macro, which allows Node.js to call these Rust functions natively. It exports `verify_inclusion_proof()`, ensuring parity between client and server.
+- **`native/src/lib.rs` [NEW]**: We ported the crucial `path_generator` and `merkle_tree` math directly from the Prover into this new Rust library. We then wrap it using `@napi-rs`, which allows Node.js to call these Rust functions synchronously and natively. It exports `verify_inclusion_proof()`, ensuring parity between client and server without WebAssembly overhead.
 
 ---
 
@@ -42,24 +42,25 @@ Because the Prover is computing complex Merkle tree hashes and deterministic pat
 *Written in TypeScript (Express.js).* 
 This is the remote server that acts as the "Referee" for the CAPTCHA.
 - **`src/server.ts` [NEW]**: The Express application entry point. We added static hosting here to bypass Brave's strict CORS rules for local HTML testing.
-- **`src/session.ts` [NEW]**: A simple in-memory session store. It maps a `clientId` to their committed 64MB plot (Phase 1), tracks when a challenge is issued, and issues JWT (JSON Web Tokens) with a 5-minute TTL when a user passes Phase 4.
+- **`src/crypto.ts` [NEW]**: Handlers AES encryption/decryption matching the Prover's implementation. Implements End-to-End AES-256-GCM encryption for payload transmission with the verifier, stopping man-in-the-middle reads.
+- **`src/session.ts` [NEW]**: A simple in-memory session store. It maps a `clientId` to their committed 64MB plot (Phase 1), tracks when a challenge is issued, and issues JWT (JSON Web Tokens) with a `NB_MAX` usage limit and TTL when a user passes Phase 4.
 - **`src/routes/commitment.ts` [NEW]**: Handles `POST /api/commitment/register`, saving the user's 32 Merkle root hashes to the server's memory.
 - **`src/routes/challenge.ts` [NEW]**: 
-  - `POST /issue`: Generates the random cryptographic `seed` (e.g., 42).
-  - `POST /submit`: Accepts the 70 bytes read from the user's disk and timestamps the response to measure disk-read speed.
-- **`src/routes/verify.ts` [NEW]**: Handles `POST /verify/inclusion`. This is the final referee. It first checks **Temporal Integrity** (did the response arrive in <2000ms, proving physical disk speeds rather than slow on-the-fly math generation?). Then it checks **Cryptographic Correctness** (do the inclusion proofs match the committed root hashes?).
+  - `POST /issue`: Generates the random cryptographic `seed` (e.g., 42), encrypts it via AES, and sends it to the proxy.
+  - `POST /submit`: Accepts the AES-encrypted proof bytes, decrypts them, and timestamps the response to measure disk-read speed.
+- **`src/routes/verify.ts` [NEW]**: Handles `POST /verify/inclusion`. This is the final referee. It first checks **Temporal Integrity** (using native Rust bindings). Then it checks **Cryptographic Correctness** (do the inclusion proofs match the committed root hashes? Checked securely inside native Rust).
 
 ---
 
 ## 🧩 4. The Proxy Widget (`/proxy`)
 *Written in TypeScript, compiled to Vanilla JS.* 
 This script sits inside the website you are trying to log into (e.g., `test.html`).
-- **`src/captcha-widget.ts` [NEW]**: The orchestrator. It acts as a bridge because the Verifier Server (`localhost:3000`) cannot talk to the Prover (`localhost:7331`) natively across the internet. 
+- **`src/captcha-widget.ts` [NEW]**: The orchestrator. It acts as a blind proxy because the Verifier Server (`node`) cannot talk to the Prover (`127.0.0.1:7331`) natively across the internet. 
   1. It pings the Prover to check if it's running.
   2. It fetches the commitment from the Prover and sends it to the Verifier.
-  3. It fetches the challenge seed from the Verifier and sends it to the Prover.
-  4. It fetches the bytes from the Prover and sends them to the Verifier.
-  5. It handles the UI state (the grey/blue/green shield UI updates based on these steps).
+  3. It fetches the AES-encrypted challenge from the Verifier and blindly forwards it to the Prover.
+  4. It fetches the AES-encrypted proof blob from the Prover and forwards it back to the Verifier.
+  5. It handles the UI state.
 
 ---
 
