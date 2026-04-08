@@ -1,7 +1,21 @@
 import jwt from 'jsonwebtoken';
 
-const JWT_SECRET = process.env.JWT_SECRET || 'pos-captcha-secret-change-in-production';
+function loadJWTSecret(): string {
+    const secret = process.env.JWT_SECRET;
+    if (!secret) {
+        throw new Error(
+            '[FATAL] JWT_SECRET environment variable is not set.\n' +
+            'Generate one with: openssl rand -hex 32\n' +
+            'Then export it: export JWT_SECRET=<your-secret>'
+        );
+    }
+    return secret;
+}
+
+const JWT_SECRET = loadJWTSecret();
 const TOKEN_TTL = '5m'; // 5 minutes
+const JWT_ISSUER = 'pos-captcha-verifier';
+const JWT_AUDIENCE = 'pos-captcha-client';
 
 export interface SessionData {
   sessionId: string;
@@ -107,7 +121,12 @@ export function issueToken(sessionId: string, clientId: string): string {
       iat: Math.floor(Date.now() / 1000),
     },
     JWT_SECRET,
-    { expiresIn: TOKEN_TTL }
+    {
+      expiresIn: TOKEN_TTL,
+      issuer: JWT_ISSUER,
+      audience: JWT_AUDIENCE,
+      algorithm: 'HS256',
+    }
   );
 }
 
@@ -116,7 +135,11 @@ export function issueToken(sessionId: string, clientId: string): string {
  */
 export function verifyToken(token: string): any {
   try {
-    const decoded = jwt.verify(token, JWT_SECRET) as any;
+    const decoded = jwt.verify(token, JWT_SECRET, {
+      algorithms: ['HS256'],
+      issuer: JWT_ISSUER,
+      audience: JWT_AUDIENCE,
+    }) as any;
     
     // Check stateful usage limit
     if (decoded && decoded.jti) {

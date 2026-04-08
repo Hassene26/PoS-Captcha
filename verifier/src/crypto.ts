@@ -1,7 +1,24 @@
 import crypto from 'crypto';
 
-const AES_KEY_STRING = process.env.AES_SECRET_KEY || 'pos-captcha-secret-key-32-bytes!';
-const AES_KEY = Buffer.from(AES_KEY_STRING, 'utf8');
+function loadAESKey(): Buffer {
+    const hexKey = process.env.AES_SECRET_KEY;
+    if (!hexKey) {
+        throw new Error(
+            '[FATAL] AES_SECRET_KEY environment variable is not set.\n' +
+            'Generate one with: openssl rand -hex 32\n' +
+            'Then export it: export AES_SECRET_KEY=<your-64-hex-char-key>'
+        );
+    }
+    if (!/^[0-9a-fA-F]{64}$/.test(hexKey)) {
+        throw new Error(
+            '[FATAL] AES_SECRET_KEY must be exactly 64 hex characters (32 bytes).\n' +
+            'Generate one with: openssl rand -hex 32'
+        );
+    }
+    return Buffer.from(hexKey, 'hex');
+}
+
+const AES_KEY = loadAESKey();
 
 export function encryptAES(payload: object): string {
     const iv = crypto.randomBytes(12); // 96-bit nonce for GCM

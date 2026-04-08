@@ -1,0 +1,8 @@
+node_modules/
+target/
+target_cli/
+dist/
+*.node
+
+# Secrets
+.env

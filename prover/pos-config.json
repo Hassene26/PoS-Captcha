@@ -6,5 +6,5 @@
     "http://localhost:3000",
     "http://127.0.0.1:3000"
   ],
-  "aes_secret_key": "pos-captcha-secret-key-32-bytes!"
+  "aes_secret_key": ""
 }
