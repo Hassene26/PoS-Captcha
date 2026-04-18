@@ -10,7 +10,7 @@ use serde::{Deserialize, Serialize};
 use crate::block_generation::blockgen::{GROUP_BYTE_SIZE, GROUP_SIZE, N};
 use crate::block_generation::encoder::generate_xored_data;
 use crate::block_generation::utils::*;
-use crate::communication::path_generator::random_path_generator;
+use crate::communication::path_generator::{random_path_generator, derive_next_seed};
 use crate::communication::structs::*;
 use crate::config::Config;
 use crate::merkle_tree::structs::*;
@@ -88,13 +88,14 @@ pub async fn handle_challenge(
     let mut proof_batch: Vec<u8> = Vec::with_capacity(BATCH_SIZE);
 
     for _ in 0..BATCH_SIZE {
-        let (block_id, position, new_seed) =
+        let (block_id, position) =
             random_path_generator(seed, iteration, data.num_block_groups);
 
         let byte_value = read_byte_from_file(&data.output_file, block_id, position);
         proof_batch.push(byte_value);
 
-        seed = new_seed;
+        // Roll the seed using the byte just read — target i+1 depends on plot byte at target i.
+        seed = derive_next_seed(seed, byte_value, iteration);
         iteration += 1;
     }
 
