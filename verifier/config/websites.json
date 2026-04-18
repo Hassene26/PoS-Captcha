@@ -1,8 +1,8 @@
 {
   "websites": [
     {
-      "id": "example.com",
-      "publicKey": "REPLACE_WITH_BASE64_ED25519_SPKI_DER_OR_PEM",
+      "id": "localhost-test",
+      "publicKey": "MCowBQYDK2VwAyEAGkelzwEqHA5FK8CGSF1NfWKV6emt6IWRKTyR7bvYDW4=",
       "registeredAt": "2026-04-18"
     }
   ]

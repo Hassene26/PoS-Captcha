@@ -1,8 +1,50 @@
-import jwt from 'jsonwebtoken';
+import crypto from 'crypto';
 import { verifierPrivateKey, verifierPublicKey } from './keys';
 
-const TOKEN_TTL = '5m'; // 5 minutes
+const TOKEN_TTL_SECONDS = 5 * 60; // 5 minutes
 const JWT_ISSUER = 'pos-captcha-verifier';
+
+// We sign JWTs with EdDSA directly via Node's crypto, because jsonwebtoken@9.0.3
+// hard-codes its algorithm allowlist and does not include 'EdDSA'.
+function b64url(buf: Buffer | string): string {
+  const b = typeof buf === 'string' ? Buffer.from(buf) : buf;
+  return b.toString('base64').replace(/=+$/, '').replace(/\+/g, '-').replace(/\//g, '_');
+}
+
+function b64urlDecode(s: string): Buffer {
+  const pad = (4 - (s.length % 4)) % 4;
+  return Buffer.from(s.replace(/-/g, '+').replace(/_/g, '/') + '='.repeat(pad), 'base64');
+}
+
+function signJwtEdDSA(payload: object, privateKey: crypto.KeyObject): string {
+  const header = { alg: 'EdDSA', typ: 'JWT' };
+  const head = b64url(JSON.stringify(header));
+  const body = b64url(JSON.stringify(payload));
+  const signingInput = `${head}.${body}`;
+  const sig = crypto.sign(null, Buffer.from(signingInput), privateKey);
+  return `${signingInput}.${b64url(sig)}`;
+}
+
+function verifyJwtEdDSA(
+  token: string,
+  publicKey: crypto.KeyObject
+): { header: any; payload: any } | null {
+  const parts = token.split('.');
+  if (parts.length !== 3) return null;
+  const [head, body, sig] = parts;
+  const signingInput = `${head}.${body}`;
+  const sigBuf = b64urlDecode(sig);
+  const ok = crypto.verify(null, Buffer.from(signingInput), publicKey, sigBuf);
+  if (!ok) return null;
+  try {
+    const header = JSON.parse(b64urlDecode(head).toString('utf8'));
+    const payload = JSON.parse(b64urlDecode(body).toString('utf8'));
+    if (header.alg !== 'EdDSA') return null;
+    return { header, payload };
+  } catch {
+    return null;
+  }
+}
 
 export interface SessionData {
   sessionId: string;
@@ -102,22 +144,18 @@ export function issueToken(sessionId: string, clientId: string, siteId: string):
   const tokenId = require('uuid').v4();
   sessionStore.registerToken(tokenId);
 
-  return jwt.sign(
-    {
-      jti: tokenId,
-      sessionId,
-      sub: clientId,
-      verified: true,
-      iat: Math.floor(Date.now() / 1000),
-    },
-    verifierPrivateKey,
-    {
-      expiresIn: TOKEN_TTL,
-      issuer: JWT_ISSUER,
-      audience: siteId,
-      algorithm: 'EdDSA',
-    }
-  );
+  const now = Math.floor(Date.now() / 1000);
+  const payload = {
+    jti: tokenId,
+    sessionId,
+    sub: clientId,
+    aud: siteId,
+    iss: JWT_ISSUER,
+    verified: true,
+    iat: now,
+    exp: now + TOKEN_TTL_SECONDS,
+  };
+  return signJwtEdDSA(payload, verifierPrivateKey);
 }
 
 /**
@@ -126,24 +164,22 @@ export function issueToken(sessionId: string, clientId: string, siteId: string):
  * the website validating its own tokens). Omit only for internal diagnostics.
  */
 export function verifyToken(token: string, expectedAudience?: string): any {
-  try {
-    const decoded = jwt.verify(token, verifierPublicKey, {
-      algorithms: ['EdDSA'],
-      issuer: JWT_ISSUER,
-      audience: expectedAudience,
-    }) as any;
-    
-    // Check stateful usage limit
-    if (decoded && decoded.jti) {
-      const isValidUsage = sessionStore.incrementTokenUsage(decoded.jti);
-      if (!isValidUsage) {
-        console.warn(`[TokenTracker] Token ${decoded.jti} rejected (Usage limit exceeded or unknown).`);
-        return null;
-      }
-    }
+  const result = verifyJwtEdDSA(token, verifierPublicKey);
+  if (!result) return null;
+  const { payload } = result;
 
-    return decoded;
-  } catch {
-    return null;
+  const now = Math.floor(Date.now() / 1000);
+  if (payload.iss !== JWT_ISSUER) return null;
+  if (typeof payload.exp !== 'number' || payload.exp <= now) return null;
+  if (expectedAudience !== undefined && payload.aud !== expectedAudience) return null;
+
+  if (payload.jti) {
+    const isValidUsage = sessionStore.incrementTokenUsage(payload.jti);
+    if (!isValidUsage) {
+      console.warn(`[TokenTracker] Token ${payload.jti} rejected (Usage limit exceeded or unknown).`);
+      return null;
+    }
   }
+
+  return payload;
 }

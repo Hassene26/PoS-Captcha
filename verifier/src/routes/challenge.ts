@@ -21,13 +21,12 @@ export const challengeRouter = Router();
  * }
  */
 challengeRouter.post('/issue', (req: Request, res: Response) => {
-  const { clientId } = req.body;
+  const { clientId, sessionId } = req.body as { clientId: string; sessionId?: string };
 
   if (!clientId) {
     return res.status(400).json({ error: 'Missing clientId' });
   }
 
-  // Check that the client has a registered commitment
   const commitment = sessionStore.getCommitment(clientId);
   if (!commitment) {
     return res.status(404).json({
@@ -35,18 +34,26 @@ challengeRouter.post('/issue', (req: Request, res: Response) => {
     });
   }
 
-  // Generate random seed (0-254)
   const seed = Math.floor(Math.random() * 255);
 
-  // Create session
-  const session = sessionStore.create(seed);
+  // If a pre-created site-bound session exists (from POST /api/session/start),
+  // reuse it so the eventual JWT can be scoped to that siteId. Otherwise create
+  // a fresh session (legacy flow; will not yield a token because siteId is unset).
+  let session = sessionId ? sessionStore.get(sessionId) : undefined;
+  if (!session) {
+    session = sessionStore.create(seed);
+  } else {
+    session.seed = seed;
+  }
   session.status = 'challenged';
   session.challengeIssuedAt = Date.now();
   session.commitment = commitment;
 
   sessionStore.update(session.sessionId, session);
 
-  console.log(`[Challenge] Issued challenge: session=${session.sessionId}, client=${clientId}`);
+  console.log(
+    `[Challenge] Issued challenge: session=${session.sessionId}, client=${clientId}, siteId=${session.siteId ?? '(none)'}`
+  );
 
   const payloadToEncrypt = { seed, session_id: session.sessionId };
   const encryptedChallengeBlob = encryptAES(payloadToEncrypt);
