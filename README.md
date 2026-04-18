@@ -139,6 +139,48 @@ On success the widget displays the JWT. The same token can be validated by any w
 
 ---
 
+## 🔁 Everyday Testing Cheat Sheet
+
+Once the one-time setup (Steps 0 and 2 above) is done, a full test run is just **two terminals + a browser tab**. The AES key, the verifier keypair, and the website whitelist all persist on disk between runs.
+
+### Terminal A — Prover
+
+```cmd
+set AES_SECRET_KEY=<same 64-hex value you picked during setup>
+run_prover.bat
+```
+
+Wait for `Prover ready on 127.0.0.1:7331`.
+
+### Terminal B — Verifier
+
+```cmd
+cd verifier
+set AES_SECRET_KEY=<same value as Terminal A>
+npm run dev
+```
+
+Wait for `Verifier listening on http://localhost:3000`.
+
+### Browser
+
+Open [http://localhost:3000/test.html](http://localhost:3000/test.html) and click the widget.
+
+> 💡 Tip: put both `set AES_SECRET_KEY=...` + start command into a tiny `.bat` per terminal so each run is one double-click.
+
+### When to redo more than that
+
+| You changed…                                  | Extra step                                  |
+| --------------------------------------------- | ------------------------------------------- |
+| Rust code in `verifier/native/`               | `cd verifier\native && napi build --release` (x64 Native Tools prompt) |
+| Rust code in `prover/`                        | Rebuild happens automatically via `run_prover.bat` |
+| `verifier/config/websites.json`               | Restart Terminal B                          |
+| TypeScript in `verifier/src/`                 | `ts-node-dev` auto-reloads — nothing to do  |
+| TypeScript in `proxy/src/`                    | `cd proxy && npm run build`                 |
+| Want a fresh Site X keypair                   | Clear localStorage for `test.html`, refresh, paste the new snippet into `websites.json`, restart Terminal B |
+
+---
+
 ## 🔧 Protocol Flow (one login)
 
 1. **Session start.** Site X's backend signs `{siteId, nonce, ts}` with its Ed25519 private key and hands the blob to the user's browser. The widget posts it to `POST /api/session/start`; the verifier checks signature, freshness, and nonce-replay, then opens a session bound to `siteId`.
