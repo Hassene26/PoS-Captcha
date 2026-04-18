@@ -1,21 +1,8 @@
 import jwt from 'jsonwebtoken';
+import { verifierPrivateKey, verifierPublicKey } from './keys';
 
-function loadJWTSecret(): string {
-    const secret = process.env.JWT_SECRET;
-    if (!secret) {
-        throw new Error(
-            '[FATAL] JWT_SECRET environment variable is not set.\n' +
-            'Generate one with: openssl rand -hex 32\n' +
-            'Then export it: export JWT_SECRET=<your-secret>'
-        );
-    }
-    return secret;
-}
-
-const JWT_SECRET = loadJWTSecret();
 const TOKEN_TTL = '5m'; // 5 minutes
 const JWT_ISSUER = 'pos-captcha-verifier';
-const JWT_AUDIENCE = 'pos-captcha-client';
 
 export interface SessionData {
   sessionId: string;
@@ -24,6 +11,7 @@ export interface SessionData {
   challengeIssuedAt?: number; // When the challenge was sent
   proofReceivedAt?: number;   // When the proof was received
   status: 'pending_commitment' | 'committed' | 'challenged' | 'verifying' | 'passed' | 'failed';
+  siteId?: string;            // Whitelisted website this session is bound to
   commitment?: CommitmentData;
   proofBytes?: number[];
   expectedSeed?: number;      // Seed after proof batch
@@ -106,9 +94,11 @@ class SessionStore {
 export const sessionStore = new SessionStore();
 
 /**
- * Issue a signed TTL token for a verified client.
+ * Issue a signed TTL token for a verified client, scoped to a specific website.
+ * Signed with the verifier's Ed25519 private key (EdDSA). Websites validate
+ * locally using the public key exposed at /.well-known/pos-captcha.pub.
  */
-export function issueToken(sessionId: string, clientId: string): string {
+export function issueToken(sessionId: string, clientId: string, siteId: string): string {
   const tokenId = require('uuid').v4();
   sessionStore.registerToken(tokenId);
 
@@ -116,29 +106,31 @@ export function issueToken(sessionId: string, clientId: string): string {
     {
       jti: tokenId,
       sessionId,
-      clientId,
+      sub: clientId,
       verified: true,
       iat: Math.floor(Date.now() / 1000),
     },
-    JWT_SECRET,
+    verifierPrivateKey,
     {
       expiresIn: TOKEN_TTL,
       issuer: JWT_ISSUER,
-      audience: JWT_AUDIENCE,
-      algorithm: 'HS256',
+      audience: siteId,
+      algorithm: 'EdDSA',
     }
   );
 }
 
 /**
  * Verify a TTL token AND enforce the stateful NB_MAX usage limit.
+ * `expectedAudience` should be the siteId the caller expects (typically
+ * the website validating its own tokens). Omit only for internal diagnostics.
  */
-export function verifyToken(token: string): any {
+export function verifyToken(token: string, expectedAudience?: string): any {
   try {
-    const decoded = jwt.verify(token, JWT_SECRET, {
-      algorithms: ['HS256'],
+    const decoded = jwt.verify(token, verifierPublicKey, {
+      algorithms: ['EdDSA'],
       issuer: JWT_ISSUER,
-      audience: JWT_AUDIENCE,
+      audience: expectedAudience,
     }) as any;
     
     // Check stateful usage limit

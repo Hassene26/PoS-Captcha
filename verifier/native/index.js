@@ -310,8 +310,8 @@ if (!nativeBinding) {
   throw new Error(`Failed to load native binding`)
 }
 
-const { randomPathGenerator, verifyInclusionProof, verifyTimeBound } = nativeBinding
+const { derivePathChain, verifyInclusionProof, verifyTimeBound } = nativeBinding
 
-module.exports.randomPathGenerator = randomPathGenerator
+module.exports.derivePathChain = derivePathChain
 module.exports.verifyInclusionProof = verifyInclusionProof
 module.exports.verifyTimeBound = verifyTimeBound

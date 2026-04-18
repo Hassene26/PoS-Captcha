@@ -117,10 +117,12 @@ verifyRouter.post('/inclusion', (req: Request, res: Response) => {
   session.status = passed ? 'passed' : 'failed';
   sessionStore.update(sessionId, session);
 
-  // Issue TTL token if passed
+  // Issue TTL token if passed. Requires the session to be bound to a whitelisted site.
   let token: string | null = null;
-  if (passed && commitment.clientId) {
-    token = issueToken(sessionId, commitment.clientId);
+  if (passed && commitment.clientId && session.siteId) {
+    token = issueToken(sessionId, commitment.clientId, session.siteId);
+  } else if (passed && !session.siteId) {
+    console.warn(`[Verify] Session ${sessionId} passed but has no siteId — no token issued.`);
   }
 
   const response: any = {

@@ -1,7 +1,7 @@
 import { Router, Request, Response } from 'express';
 import { sessionStore } from '../session';
 import { encryptAES, decryptAES } from '../crypto';
-import { randomPathGenerator } from '../../native';
+import { derivePathChain } from '../../native';
 
 export const challengeRouter = Router();
 
@@ -107,14 +107,16 @@ challengeRouter.post('/submit', (req: Request, res: Response) => {
 
   console.log(`[Challenge] Proof received: session=${sessionId}, ${proof_bytes.length} bytes, elapsed=${elapsedMs}ms`);
 
-  // Now, we must demand cryptographic inclusion proofs for a sample of the bytes read.
-  // Instead of a dummy target, we use the Native Rust binding to accurately recreate 
-  // the exact deterministic paths the Prover travelled using the original seed.
+  // Re-derive the target chain from the original seed AND the bytes the Prover returned.
+  // Because target i+1 depends on byte i (rolled into the seed), the verifier can only
+  // reconstruct the path by walking the returned bytes — which is exactly what binds the
+  // Prover to having done real sequential disk reads.
   const numBlockGroups = session.commitment!.numBlockGroups;
   const originalSeed = session.seed;
   const BATCH_SIZE = 70; // Must match Prover
-  
-  const allPaths = randomPathGenerator(originalSeed, BATCH_SIZE, numBlockGroups);
+
+  const proofBytesBuf = Buffer.from(proof_bytes);
+  const allPaths = derivePathChain(originalSeed, numBlockGroups, proofBytesBuf);
   
   // Sample 1% of the queried bytes (minimum 1 target) to verify their Merkle Inclusion
   const VERIFIABLE_RATIO = 0.01;
