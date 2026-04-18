@@ -2,58 +2,37 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>PoS-CAPTCHA Demo</title>
+  <title>PoS-CAPTCHA Demo (acting as Site X)</title>
   <style>
     body {
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-      background: #f8fafc;
-      color: #0f172a;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      padding-top: 50px;
+      background: #f8fafc; color: #0f172a;
+      display: flex; flex-direction: column; align-items: center; padding-top: 30px;
     }
     .card {
-      background: white;
-      padding: 30px;
-      border-radius: 12px;
+      background: white; padding: 30px; border-radius: 12px;
       box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1);
-      width: 400px;
-      text-align: center;
+      width: 440px; text-align: center;
     }
-    .form-group {
-      margin-bottom: 20px;
-      text-align: left;
-    }
+    .form-group { margin-bottom: 18px; text-align: left; }
     input {
-      width: 100%;
-      padding: 10px;
-      border: 1px solid #cbd5e1;
-      border-radius: 6px;
-      margin-top: 6px;
-      box-sizing: border-box;
+      width: 100%; padding: 10px; border: 1px solid #cbd5e1;
+      border-radius: 6px; margin-top: 6px; box-sizing: border-box;
     }
     button[type="submit"] {
-      background: #3b82f6;
-      color: white;
-      border: none;
-      padding: 12px;
-      width: 100%;
-      border-radius: 6px;
-      font-weight: 600;
-      cursor: pointer;
-      margin-top: 10px;
+      background: #3b82f6; color: white; border: none; padding: 12px;
+      width: 100%; border-radius: 6px; font-weight: 600; cursor: pointer; margin-top: 10px;
     }
-    button[type="submit"]:disabled {
-      background: #94a3b8;
-      cursor: not-allowed;
+    button[type="submit"]:disabled { background: #94a3b8; cursor: not-allowed; }
+    #result { margin-top: 15px; font-size: 14px; color: #10b981; font-weight: 600; word-break: break-all; }
+    .setup-banner {
+      background: #fef3c7; border: 1px solid #fbbf24;
+      padding: 14px; border-radius: 8px; margin-bottom: 20px;
+      font-size: 13px; text-align: left; color: #78350f;
     }
-    #result {
-      margin-top: 15px;
-      font-size: 14px;
-      color: #10b981;
-      font-weight: 600;
-      word-break: break-all;
+    .setup-banner code {
+      display: block; background: white; padding: 8px; border-radius: 4px;
+      margin-top: 6px; word-break: break-all; font-size: 11px;
     }
   </style>
 </head>
@@ -61,53 +40,109 @@
 
   <div class="card">
     <h2>Secure Login</h2>
-    <p style="color: #64748b; font-size: 14px; margin-bottom: 25px;">
-      Please prove your storage allocation to continue.
+    <p style="color: #64748b; font-size: 14px; margin-bottom: 20px;">
+      This page acts as <b>Site X</b>. It holds its own Ed25519 keypair (in localStorage)
+      and signs intents so the PoS-CAPTCHA verifier can open a site-bound session.
     </p>
+
+    <div id="setup" class="setup-banner" style="display:none;">
+      <b>One-time setup:</b> add this entry to
+      <code>verifier/config/websites.json</code>, then restart the verifier:
+      <code id="setup-snippet"></code>
+    </div>
 
     <div class="form-group">
       <label>Email Address</label>
       <input type="email" value="user@example.com">
     </div>
-    
     <div class="form-group">
       <label>Password</label>
       <input type="password" value="password123">
     </div>
 
-    <!-- The PoS-CAPTCHA Widget Container -->
     <div id="pos-widget" style="margin-bottom: 20px;"></div>
 
     <button id="submitBtn" type="submit" disabled>Login</button>
     <div id="result"></div>
   </div>
 
-  <!-- Load the compiled widget -->
   <script src="proxy/captcha-widget.js"></script>
-  
   <script>
-    // Initialize the widget
-    PoSCaptcha.init({
-      element: '#pos-widget',
-      verifierUrl: 'http://localhost:3000',
-      proverUrl: 'http://127.0.0.1:7331',
-      clientId: 'demo-user-' + Math.floor(Math.random() * 10000),
-      
-      onSuccess: (token) => {
-        // Enable the submit button when verification passes
-        document.getElementById('submitBtn').disabled = false;
-        document.getElementById('result').innerText = "JWT Token Received:\n" + token.substring(0, 30) + "...";
-      },
-      onError: (err) => {
-        document.getElementById('submitBtn').disabled = true;
-        document.getElementById('result').innerText = "";
-        console.error("Verification failed:", err);
-      }
-    });
+    const SITE_ID = 'localhost-test';
+    const STORAGE_KEY_PRIV = 'siteX.ed25519.privJwk';
+    const STORAGE_KEY_PUB = 'siteX.ed25519.pubSpkiB64';
 
-    document.getElementById('submitBtn').addEventListener('click', () => {
-      alert("Login successful! The PoS proof was valid.");
-    });
+    // Base64 encode a byte buffer (browser-safe).
+    function b64(buf) {
+      return btoa(String.fromCharCode(...new Uint8Array(buf)));
+    }
+
+    // Load a persisted demo keypair or generate one on first run.
+    async function loadOrCreateKeypair() {
+      const privJwkStr = localStorage.getItem(STORAGE_KEY_PRIV);
+      const pubSpkiB64 = localStorage.getItem(STORAGE_KEY_PUB);
+      if (privJwkStr && pubSpkiB64) {
+        const priv = await crypto.subtle.importKey(
+          'jwk', JSON.parse(privJwkStr), { name: 'Ed25519' }, false, ['sign']
+        );
+        return { priv, pubSpkiB64, freshlyGenerated: false };
+      }
+      const kp = await crypto.subtle.generateKey({ name: 'Ed25519' }, true, ['sign', 'verify']);
+      const privJwk = await crypto.subtle.exportKey('jwk', kp.privateKey);
+      const pubSpki = await crypto.subtle.exportKey('spki', kp.publicKey);
+      const pubSpkiB64New = b64(pubSpki);
+      localStorage.setItem(STORAGE_KEY_PRIV, JSON.stringify(privJwk));
+      localStorage.setItem(STORAGE_KEY_PUB, pubSpkiB64New);
+      return { priv: kp.privateKey, pubSpkiB64: pubSpkiB64New, freshlyGenerated: true };
+    }
+
+    // Sign an intent { siteId, nonce, ts } with the site's private key.
+    async function makeSignedIntent(priv) {
+      const payload = {
+        siteId: SITE_ID,
+        nonce: crypto.randomUUID(),
+        ts: Date.now(),
+      };
+      // Must match the verifier's canonical ordering: siteId, nonce, ts.
+      const canonical = JSON.stringify({ siteId: payload.siteId, nonce: payload.nonce, ts: payload.ts });
+      const sig = await crypto.subtle.sign({ name: 'Ed25519' }, priv, new TextEncoder().encode(canonical));
+      return { payload, signature: b64(sig) };
+    }
+
+    (async () => {
+      const { priv, pubSpkiB64, freshlyGenerated } = await loadOrCreateKeypair();
+
+      if (freshlyGenerated) {
+        const snippet = JSON.stringify(
+          { id: SITE_ID, publicKey: pubSpkiB64, registeredAt: new Date().toISOString().slice(0, 10) },
+          null, 2
+        );
+        document.getElementById('setup-snippet').textContent = snippet;
+        document.getElementById('setup').style.display = 'block';
+      }
+
+      PoSCaptcha.init({
+        element: '#pos-widget',
+        verifierUrl: 'http://localhost:3000',
+        proverUrl: 'http://127.0.0.1:7331',
+        clientId: 'demo-user-' + Math.floor(Math.random() * 10000),
+        siteId: SITE_ID,
+        getSignedIntent: () => makeSignedIntent(priv),
+        onSuccess: (token) => {
+          document.getElementById('submitBtn').disabled = false;
+          document.getElementById('result').innerText = 'JWT Token Received:\n' + token.substring(0, 40) + '...';
+        },
+        onError: (err) => {
+          document.getElementById('submitBtn').disabled = true;
+          document.getElementById('result').innerText = '';
+          console.error('Verification failed:', err);
+        },
+      });
+
+      document.getElementById('submitBtn').addEventListener('click', () => {
+        alert('Login successful! The PoS proof was valid.');
+      });
+    })();
   </script>
 </body>
 </html>

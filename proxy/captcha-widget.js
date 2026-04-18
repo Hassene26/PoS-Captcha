@@ -94,7 +94,7 @@ const PoSCaptcha = {
     async startVerification() {
         if (!this.config)
             return;
-        const { verifierUrl, proverUrl, clientId, onSuccess, onError } = this.config;
+        const { verifierUrl, proverUrl, clientId, siteId, getSignedIntent, onSuccess, onError } = this.config;
         try {
             // Step 1: Check if prover is online
             this.render('checking');
@@ -104,7 +104,19 @@ const PoSCaptcha = {
                 onError === null || onError === void 0 ? void 0 : onError('Local PoS service is not running');
                 return;
             }
-            // Step 2: Ensure commitment is registered
+            // Step 2a: Obtain signed intent from site X and open site-bound session
+            const signedIntent = await getSignedIntent();
+            const startResp = await fetch(`${verifierUrl}/api/session/start`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ siteId, signedIntent }),
+            });
+            if (!startResp.ok) {
+                const errText = await startResp.text();
+                throw new Error(`session/start failed: ${errText}`);
+            }
+            const { sessionId } = await startResp.json();
+            // Step 2b: Ensure commitment is registered
             this.render('proving');
             const commitResp = await fetch(`${verifierUrl}/api/commitment/${clientId}`);
             if (!commitResp.ok) {
@@ -123,11 +135,11 @@ const PoSCaptcha = {
                     }),
                 });
             }
-            // Step 3: Request challenge from Verifier
+            // Step 3: Request challenge from Verifier, reusing the site-bound session
             const challengeResp = await fetch(`${verifierUrl}/api/challenge/issue`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ clientId }),
+                body: JSON.stringify({ clientId, sessionId }),
             });
             const challenge = await challengeResp.json();
             // Step 4: Forward encrypted challenge to local Prover
