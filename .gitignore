@@ -1,8 +1,30 @@
+# Build artifacts
 node_modules/
-target/
-target_cli/
+**/target/
+**/target_cli/
 dist/
 *.node
 
+# Prover plot (64MB) — regenerated deterministically on startup
+output.bin
+root_hashes.bin
+
+# Logs
+*.log
+npm-debug.log*
+
+# IDE / editor
+.vscode/
+.idea/
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Claude worktrees
+.claude/worktrees/
+
 # Secrets
 .env
+verifier/config/verifier-keys/
