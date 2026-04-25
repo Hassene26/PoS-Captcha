@@ -35,6 +35,7 @@ The system is built across 5 distinct components:
 - **Byte-chained path generator.** Target *i+1* depends on the plot byte actually read at target *i*, so an attacker without the local plot cannot pre-compute the path from the seed alone. See [prover/src/communication/path_generator.rs](prover/src/communication/path_generator.rs) and [verifier/native/src/lib.rs](verifier/native/src/lib.rs).
 - **Multi-tenant websites.** Websites are whitelisted by Ed25519 public key in `verifier/config/websites.json`. A login request requires a signed intent `{siteId, nonce, ts}` from the website's backend (±60 s freshness, nonce dedup). Issued JWTs are scoped to `aud = siteId` and signed with EdDSA; websites validate offline using the verifier's public key.
 - **Token lifecycle.** JWTs die on whichever hits first: 5-minute TTL (stateless `exp`) or 5 successful uses (stateful `tokenUses[jti]` counter on the verifier).
+- **User consent gate.** Every `/challenge` request blocks until the user clicks **Allow** in a popup window opened by the browser extension (or until a remembered per-site decision auto-replies). Default fail-closed timeout is 30 s. Disable with `REQUIRE_CONSENT=false` for headless testing. The consent wait time is reported back so the verifier's 2 s disk-read bound only counts compute time, not human reaction time.
 - **Determinism without external files.** Plots are generated via a cryptographic CSPRNG (`rand_chacha`) — no `input.mp4` required.
 - **Windows toolchain.** Cargo and NAPI both need `link.exe` (MSVC); run the build commands from an **x64 Native Tools Command Prompt for VS 2022** so `link.exe` is on PATH.
 
@@ -42,7 +43,7 @@ The system is built across 5 distinct components:
 
 ## 🚀 Running the Project
 
-Three things must run simultaneously: the **Prover**, the **Verifier**, and the **browser** (with the optional status extension).
+Three things must run simultaneously: the **Prover**, the **Verifier**, and the **browser** with the **PoS-CAPTCHA Status extension** (required by default — it shows the consent popup; you can run without it by setting `REQUIRE_CONSENT=false` on the prover).
 
 ### Prerequisites
 
@@ -98,9 +99,15 @@ node -e "const c=require('crypto');const {publicKey,privateKey}=c.generateKeyPai
 
 Paste the `PUB:` string into `publicKey` and keep the private key for the website backend that issues signed intents.
 
-### Step 3: Start the Prover
+### Step 3: Build & start the Prover
 
-In a terminal in the project root:
+The Rust prover must be (re)built any time you change code under `prover/src/`. Use the project's build script (it sets the right MSVC paths and the custom `CARGO_TARGET_DIR` that `run_prover.bat` expects):
+
+```cmd
+build_check.bat build --release
+```
+
+Then launch:
 
 ```cmd
 run_prover.bat
@@ -120,22 +127,50 @@ npm run dev
 
 This starts the backend at `http://localhost:3000`. On first run the verifier creates its Ed25519 keypair under `verifier/config/verifier-keys/` (gitignored). Its public key is served at `GET /.well-known/pos-captcha.pub`.
 
-### Step 5: Load the Browser Extension (optional but useful)
+### Step 5: Load the Browser Extension (required by default)
+
+The extension is what shows the **Allow / Deny** consent popup. Without it, every challenge will time out after 30 s. (You can opt out for headless testing — see "Disabling consent" below.)
 
 1. Chrome/Brave → `chrome://extensions/`.
 2. Toggle **Developer mode** ON.
 3. **Load unpacked** → select the `extension/` folder.
 4. Pin **PoS-CAPTCHA Status** to the toolbar — it should show 🟢 Ready.
 
+After you make changes to extension code, click the small **↻** icon on the extension's card to reload (no need to remove + reinstall — `chrome.storage.local` data is preserved).
+
 ### Step 6: Try the flow
 
 Open [http://localhost:3000/test.html](http://localhost:3000/test.html). Click the PoS-CAPTCHA widget and watch the sequence:
 
 ```
-Checking local service  →  Verifying storage proof  →  Verified ✅
+Checking local service  →  Approve in browser extension…  →  Verifying storage proof  →  Verified ✅
 ```
 
-On success the widget displays the JWT. The same token can be validated by any whitelisted website backend using the verifier's public key — no callback to the verifier needed.
+A small popup window opens showing which site is asking. Click **Allow** (optionally tick "Remember my choice for this site"). On success the widget displays the JWT. The same token can be validated by any whitelisted website backend using the verifier's public key — no callback to the verifier needed.
+
+### Managing remembered consent decisions
+
+If you ticked "Remember my choice" and want to undo it:
+
+- **Forget one site:** open the extension's service-worker DevTools (`chrome://extensions/` → **service worker** under PoS-CAPTCHA Status) and run in the console:
+  ```js
+  chrome.storage.local.get('posConsent', r => {
+    delete r.posConsent['localhost-test'];
+    chrome.storage.local.set({ posConsent: r.posConsent });
+  });
+  ```
+- **Forget all sites:** `chrome.storage.local.remove('posConsent');`
+
+### Disabling consent (headless / CI mode)
+
+Set `REQUIRE_CONSENT=false` in the prover terminal **before** launching `run_prover.bat`:
+
+```cmd
+set REQUIRE_CONSENT=false
+run_prover.bat
+```
+
+The prover then skips the consent gate entirely — useful for automated tests or when you don't want to install the extension.
 
 ---
 
@@ -164,7 +199,7 @@ Wait for `Verifier listening on http://localhost:3000`.
 
 ### Browser
 
-Open [http://localhost:3000/test.html](http://localhost:3000/test.html) and click the widget.
+Open [http://localhost:3000/test.html](http://localhost:3000/test.html) and click the widget. When the consent popup appears, click **Allow**.
 
 > 💡 Tip: put both `set AES_SECRET_KEY=...` + start command into a tiny `.bat` per terminal so each run is one double-click.
 
@@ -172,12 +207,14 @@ Open [http://localhost:3000/test.html](http://localhost:3000/test.html) and clic
 
 | You changed…                                  | Extra step                                  |
 | --------------------------------------------- | ------------------------------------------- |
-| Rust code in `verifier/native/`               | `cd verifier\native && napi build --release` (x64 Native Tools prompt) |
-| Rust code in `prover/`                        | Rebuild happens automatically via `run_prover.bat` |
-| `verifier/config/websites.json`               | Restart Terminal B                          |
-| TypeScript in `verifier/src/`                 | `ts-node-dev` auto-reloads — nothing to do  |
+| Rust code in `verifier/native/`               | `cd verifier\native && napi build --release` (x64 Native Tools prompt). After this, `index.d.ts` may be blanked — restore from git if so. |
+| Rust code in `prover/`                        | `build_check.bat build --release` from project root, then restart `run_prover.bat`. **A plain `cargo build` won't work** — it writes to `prover/target/` instead of `%TEMP%\pos-prover-build\` where `run_prover.bat` looks. |
+| `verifier/config/websites.json`               | Restart Terminal B (`ts-node-dev` doesn't watch JSON files)                          |
+| TypeScript in `verifier/src/`                 | `ts-node-dev` auto-reloads — nothing to do *(but Ctrl+C and restart if changes don't appear in logs after ~3 s)* |
 | TypeScript in `proxy/src/`                    | `cd proxy && npm run build`                 |
+| Anything in `extension/`                      | Click ↻ on the extension card at `chrome://extensions/` |
 | Want a fresh Site X keypair                   | Clear localStorage for `test.html`, refresh, paste the new snippet into `websites.json`, restart Terminal B |
+| Forgot a remembered consent decision          | DevTools console of extension service worker → `chrome.storage.local.remove('posConsent')` |
 
 ---
 
@@ -186,7 +223,8 @@ Open [http://localhost:3000/test.html](http://localhost:3000/test.html) and clic
 1. **Session start.** Site X's backend signs `{siteId, nonce, ts}` with its Ed25519 private key and hands the blob to the user's browser. The widget posts it to `POST /api/session/start`; the verifier checks signature, freshness, and nonce-replay, then opens a session bound to `siteId`.
 2. **Commitment.** Widget asks the local Prover for its 64MB plot's Merkle root hashes and sends them to `POST /api/commitment/register`.
 3. **Challenge.** Verifier picks a random seed, encrypts `{seed, sessionId}` with AES-GCM, and returns it (`POST /api/challenge/issue`).
-4. **Proving.** Widget forwards the encrypted blob to the Prover. The Prover runs the byte-chained path generator for 70 iterations: each target depends on the plot byte read at the previous target. Returns 70 bytes (AES-encrypted).
-5. **Path reconstruction + sampling.** Verifier calls `derivePathChain(seed, numBlockGroups, proofBytes)` in native Rust to rebuild the target chain, samples 1%, and asks the Prover for Merkle inclusion proofs on those targets.
-6. **Verification.** Verifier checks the 2-second time bound and Merkle inclusion against the committed root hashes. On success, it signs an EdDSA JWT with `aud = siteId`, `exp = +5 min`, `jti = uuid`, and returns it.
-7. **Site-side login.** User presents the JWT to site X. Site X validates it offline (`alg = EdDSA`, `aud == siteId`, `exp`) using the cached verifier public key. No callback required.
+4. **Consent.** The Prover suspends the request and exposes it via `GET /pending-consent`. The browser extension polls that endpoint, opens an Allow/Deny popup showing the requesting `siteId`, and posts the user's decision back via `POST /consent`. If denied or no decision after 30 s → fail closed.
+5. **Proving.** On Allow, the Prover runs the byte-chained path generator for 70 iterations: each target depends on the plot byte read at the previous target. Returns 70 bytes + the consent wait time (so the verifier doesn't punish slow human reaction), all AES-encrypted.
+6. **Path reconstruction + sampling.** Verifier calls `derivePathChain(seed, numBlockGroups, proofBytes)` in native Rust to rebuild the target chain, samples 1%, and asks the Prover for Merkle inclusion proofs on those targets.
+7. **Verification.** Verifier subtracts `consent_wait_ms` from wall-clock elapsed, checks the resulting compute time against the 2 s bound, and verifies Merkle inclusion against the committed root hashes. On success, it signs an EdDSA JWT with `aud = siteId`, `exp = +5 min`, `jti = uuid`, and returns it.
+8. **Site-side login.** User presents the JWT to site X. Site X validates it offline (`alg = EdDSA`, `aud == siteId`, `exp`) using the cached verifier public key. No callback required.
