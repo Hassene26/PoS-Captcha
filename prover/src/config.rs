@@ -16,7 +16,14 @@ pub struct Config {
     /// Loaded from AES_SECRET_KEY env var; falls back to config file value.
     #[serde(default)]
     pub aes_secret_key: String,
+    /// If true, every /challenge request must be approved by the user via the
+    /// browser extension before the prover reads from disk. Defaults to true.
+    /// Override with env var REQUIRE_CONSENT=false (e.g. for headless tests).
+    #[serde(default = "default_require_consent")]
+    pub require_consent: bool,
 }
+
+fn default_require_consent() -> bool { true }
 
 impl Config {
     pub fn default_config() -> Config {
@@ -29,6 +36,7 @@ impl Config {
                 String::from("http://127.0.0.1:3000"),
             ],
             aes_secret_key: String::new(),
+            require_consent: true,
         }
     }
 
@@ -51,6 +59,9 @@ impl Config {
         // Env var overrides config file
         if let Ok(env_key) = std::env::var("AES_SECRET_KEY") {
             config.aes_secret_key = env_key;
+        }
+        if let Ok(v) = std::env::var("REQUIRE_CONSENT") {
+            config.require_consent = !matches!(v.to_lowercase().as_str(), "false" | "0" | "no");
         }
 
         // Validate: must be 64 hex chars (32 bytes)

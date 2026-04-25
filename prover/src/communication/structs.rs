@@ -32,6 +32,12 @@ pub struct ChallengeResponse {
     pub proof_bytes: Vec<u8>,
     pub seed: u8,
     pub iteration: u64,
+    /// Milliseconds spent waiting for the user to approve the request in
+    /// the browser extension. The verifier subtracts this from the wall-
+    /// clock elapsed time so its 2 s disk-read bound is not polluted by
+    /// human reaction time.
+    #[serde(default)]
+    pub consent_wait_ms: u64,
 }
 
 /// Request for inclusion proofs from the verifier.

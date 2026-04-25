@@ -1,9 +1,9 @@
 {
   "manifest_version": 3,
   "name": "PoS-CAPTCHA Status",
-  "description": "Displays the status of your local Proof of Space service",
-  "version": "1.0.0",
-  "permissions": [],
+  "description": "Displays the status of your local Proof of Space service and authorizes per-site challenges",
+  "version": "1.1.0",
+  "permissions": ["storage", "notifications"],
   "host_permissions": [
     "http://127.0.0.1:7331/*"
   ],
@@ -12,5 +12,11 @@
   },
   "background": {
     "service_worker": "background.js"
-  }
+  },
+  "web_accessible_resources": [
+    {
+      "resources": ["consent.html"],
+      "matches": ["<all_urls>"]
+    }
+  ]
 }

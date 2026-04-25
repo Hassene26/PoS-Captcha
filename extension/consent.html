@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>PoS-CAPTCHA Authorization</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      width: 100%; min-height: 100vh;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: #0f172a; color: #e2e8f0; padding: 20px;
+    }
+    h1 { font-size: 16px; margin-bottom: 16px; color: #f8fafc; }
+    .header { display: flex; align-items: center; gap: 8px; margin-bottom: 16px; }
+    .logo { font-size: 22px; }
+    .card {
+      background: #1e293b; border-radius: 10px; padding: 16px; margin-bottom: 16px;
+    }
+    .label { font-size: 11px; color: #64748b; text-transform: uppercase; letter-spacing: 0.5px; }
+    .value { font-size: 15px; color: #f1f5f9; margin-top: 4px; word-break: break-all; }
+    .desc { font-size: 13px; color: #cbd5e1; line-height: 1.5; margin-bottom: 16px; }
+    .remember {
+      display: flex; align-items: center; gap: 8px; margin-bottom: 16px;
+      font-size: 12px; color: #94a3b8;
+    }
+    .remember input { margin: 0; }
+    .row { display: flex; gap: 10px; }
+    button {
+      flex: 1; padding: 12px; border: none; border-radius: 8px;
+      font-weight: 600; font-size: 14px; cursor: pointer;
+      transition: opacity 0.15s;
+    }
+    button:hover { opacity: 0.85; }
+    .allow { background: #10b981; color: white; }
+    .deny { background: #ef4444; color: white; }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <span class="logo">🛡️</span>
+    <h1>Authorize PoS-CAPTCHA?</h1>
+  </div>
+
+  <div class="card">
+    <div class="label">Requesting site</div>
+    <div class="value" id="siteId">—</div>
+  </div>
+
+  <p class="desc">
+    This site wants to verify you're human using your local proof-of-space plot.
+    The prover will read ~70 bytes from your 64 MB plot file and return a few
+    Merkle inclusion proofs. No other data is accessed.
+  </p>
+
+  <label class="remember">
+    <input type="checkbox" id="remember">
+    Remember my choice for this site
+  </label>
+
+  <div class="row">
+    <button class="deny" id="deny">Deny</button>
+    <button class="allow" id="allow">Allow</button>
+  </div>
+
+  <script src="consent.js"></script>
+</body>
+</html>

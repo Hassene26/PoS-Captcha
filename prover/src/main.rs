@@ -5,6 +5,7 @@ mod api;
 mod plotter;
 mod config;
 mod crypto;
+mod consent;
 
 use actix_web::{web, App, HttpServer, middleware};
 use actix_cors::Cors;
@@ -39,6 +40,7 @@ async fn main() -> std::io::Result<()> {
         root_hashes: root_hashes,
         num_block_groups: num_block_groups as u64,
         config: config.clone(),
+        consent: crate::consent::ConsentRegistry::new(),
     });
 
     let allowed_origins = config.allowed_origins.clone();
@@ -65,6 +67,8 @@ async fn main() -> std::io::Result<()> {
             .route("/commitment", web::get().to(api::get_commitment))
             .route("/challenge", web::post().to(api::handle_challenge))
             .route("/inclusion-proofs", web::post().to(api::handle_inclusion_proofs))
+            .route("/pending-consent", web::get().to(api::list_pending_consent))
+            .route("/consent", web::post().to(api::submit_consent))
     })
     .bind(format!("127.0.0.1:{}", port))?
     .run()
