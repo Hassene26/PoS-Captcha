@@ -58,6 +58,7 @@ export interface SessionData {
   proofBytes?: number[];
   expectedSeed?: number;      // Seed after proof batch
   expectedIteration?: number;
+  consentWaitMs?: number;     // Time the prover spent waiting for user consent
 }
 
 export interface CommitmentData {

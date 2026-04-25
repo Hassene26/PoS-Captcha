@@ -59,8 +59,11 @@ verifyRouter.post('/inclusion', (req: Request, res: Response) => {
   }
 
   // ========== Temporal Integrity Check ==========
-  const elapsedMs = (session.proofReceivedAt || Date.now()) - (session.challengeIssuedAt || 0);
-  
+  const wallMs = (session.proofReceivedAt || Date.now()) - (session.challengeIssuedAt || 0);
+  // Subtract human reaction time spent in the consent popup — the 2 s bound
+  // applies to disk reads, not to how fast the user clicks "Allow".
+  const elapsedMs = Math.max(0, wallMs - (session.consentWaitMs || 0));
+
   // Call the native Rust verification for the 2000ms bound
   const timeCheckPassed = verifyTimeBound(elapsedMs);
 

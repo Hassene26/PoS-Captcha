@@ -22,6 +22,10 @@ app.use(express.json({ limit: '10mb' }));
 // Serve the static test.html page and proxy script to bypass Brave 'file://' CORS blocks
 app.use(express.static(path.join(__dirname, '../../')));
 
+// Convenience: redirect bare root to the demo page so opening
+// http://localhost:3000/ doesn't 404.
+app.get('/', (_req, res) => res.redirect('/test.html'));
+
 // Health check
 app.get('/health', (_req, res) => {
   res.json({ status: 'ok', sessions: sessionStore.size() });

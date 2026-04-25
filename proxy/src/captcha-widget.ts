@@ -66,12 +66,13 @@ const PoSCaptcha = {
     this.checkProverStatus();
   },
 
-  render(state: 'idle' | 'checking' | 'proving' | 'success' | 'error' | 'offline', message?: string) {
+  render(state: 'idle' | 'checking' | 'awaiting' | 'proving' | 'success' | 'error' | 'offline', message?: string) {
     if (!this.container) return;
 
     const stateConfig: Record<string, { icon: string; text: string; color: string }> = {
       idle: { icon: '🔒', text: 'Click to verify storage', color: '#6366f1' },
       checking: { icon: '🔍', text: 'Checking local service...', color: '#f59e0b' },
+      awaiting: { icon: '🛡️', text: 'Approve in browser extension…', color: '#a855f7' },
       proving: { icon: '⏳', text: 'Verifying storage proof...', color: '#3b82f6' },
       success: { icon: '✅', text: 'Verified!', color: '#10b981' },
       error: { icon: '❌', text: message || 'Verification failed', color: '#ef4444' },
@@ -185,11 +186,25 @@ const PoSCaptcha = {
       const challenge = await challengeResp.json();
 
       // Step 4: Forward encrypted challenge to local Prover
+      // The X-Site-Id header lets the prover show the user *which* site is
+      // requesting the proof in the consent popup.
+      this.render('awaiting');
       const proofResp = await fetch(`${proverUrl}/challenge`, {
         method: 'POST',
-        headers: { 'Content-Type': 'text/plain' },
+        headers: { 'Content-Type': 'text/plain', 'X-Site-Id': siteId },
         body: challenge.encryptedChallengeBlob,
       });
+      if (proofResp.status === 403) {
+        this.render('error', 'Authorization denied');
+        onError?.('User denied the proof-of-space authorization');
+        return;
+      }
+      if (proofResp.status === 408) {
+        this.render('error', 'Authorization timed out');
+        onError?.('No authorization decision from extension within 30s');
+        return;
+      }
+      this.render('proving');
       const encryptedProofBlob = await proofResp.text();
 
       // Step 5: Submit encrypted proof back to Verifier
