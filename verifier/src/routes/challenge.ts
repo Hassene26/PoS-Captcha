@@ -100,19 +100,23 @@ challengeRouter.post('/submit', (req: Request, res: Response) => {
     return res.status(400).json({ error: 'Failed to decrypt proof blob' });
   }
 
-  const { proof_bytes, seed, iteration } = proofData;
+  const { proof_bytes, seed, iteration, consent_wait_ms } = proofData;
 
   // Record the proof and timing
   session.proofReceivedAt = Date.now();
   session.proofBytes = proof_bytes;
   session.expectedSeed = seed;
   session.expectedIteration = iteration;
+  session.consentWaitMs = typeof consent_wait_ms === 'number' ? consent_wait_ms : 0;
   session.status = 'verifying';
   sessionStore.update(sessionId, session);
 
-  const elapsedMs = session.proofReceivedAt - (session.challengeIssuedAt || session.proofReceivedAt);
+  const wallMs = session.proofReceivedAt - (session.challengeIssuedAt || session.proofReceivedAt);
+  // Subtract user consent reaction time — the 2 s bound is meant to cap
+  // disk-read time, not how fast the human clicks "Allow".
+  const elapsedMs = Math.max(0, wallMs - (session.consentWaitMs || 0));
 
-  console.log(`[Challenge] Proof received: session=${sessionId}, ${proof_bytes.length} bytes, elapsed=${elapsedMs}ms`);
+  console.log(`[Challenge] Proof received: session=${sessionId}, ${proof_bytes.length} bytes, wall=${wallMs}ms, consentWait=${session.consentWaitMs}ms, compute=${elapsedMs}ms`);
 
   // Re-derive the target chain from the original seed AND the bytes the Prover returned.
   // Because target i+1 depends on byte i (rolled into the seed), the verifier can only

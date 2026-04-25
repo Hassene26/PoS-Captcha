@@ -2,8 +2,9 @@ use std::collections::HashSet;
 use std::fs::File;
 use std::io::{Read, Seek, SeekFrom};
 use std::sync::Mutex;
+use std::time::Duration;
 
-use actix_web::{web, HttpResponse};
+use actix_web::{web, HttpRequest, HttpResponse};
 use log::{debug, info, warn};
 use serde::{Deserialize, Serialize};
 
@@ -13,6 +14,7 @@ use crate::block_generation::utils::*;
 use crate::communication::path_generator::{random_path_generator, derive_next_seed};
 use crate::communication::structs::*;
 use crate::config::Config;
+use crate::consent::{ConsentDecision, ConsentRegistry, CONSENT_TIMEOUT};
 use crate::merkle_tree::structs::*;
 
 /// Shared application state for all HTTP handlers.
@@ -22,6 +24,7 @@ pub struct AppState {
     pub root_hashes: Vec<[u8; HASH_BYTES_LEN]>,
     pub num_block_groups: u64,
     pub config: Config,
+    pub consent: ConsentRegistry,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -63,6 +66,7 @@ pub async fn get_commitment(data: web::Data<AppState>) -> HttpResponse {
 // ============ /challenge ============
 
 pub async fn handle_challenge(
+    http_req: HttpRequest,
     data: web::Data<AppState>,
     body: String,
 ) -> HttpResponse {
@@ -70,13 +74,57 @@ pub async fn handle_challenge(
         Some(d) => d,
         None => return HttpResponse::BadRequest().body("Invalid encrypted payload"),
     };
-    
+
     let req: ChallengeRequest = match serde_json::from_str(&decrypted) {
         Ok(r) => r,
         Err(_) => return HttpResponse::BadRequest().body("Invalid JSON"),
     };
 
     info!("Challenge received: seed={}, session={}", req.seed, req.session_id);
+
+    let mut consent_wait_ms: u64 = 0;
+
+    // ---- User-consent gate ------------------------------------------------
+    // The widget passes the website's siteId in the X-Site-Id header (it's
+    // shown to the user; tampering only changes what the user sees, not what
+    // the verifier later checks against the session's bound siteId).
+    if data.config.require_consent {
+        let site_id = http_req
+            .headers()
+            .get("X-Site-Id")
+            .and_then(|v| v.to_str().ok())
+            .unwrap_or("(unknown)")
+            .to_string();
+        let request_id = format!("req-{}", rand::random::<u64>());
+
+        let rx = data.consent.register(request_id.clone(), site_id.clone());
+        info!(
+            "[Consent] Awaiting user decision for request_id={}, site={}",
+            request_id, site_id
+        );
+
+        let consent_start = std::time::Instant::now();
+        let decision = tokio::time::timeout(CONSENT_TIMEOUT, rx).await;
+        consent_wait_ms = consent_start.elapsed().as_millis() as u64;
+        match decision {
+            Ok(Ok(true)) => {
+                info!("[Consent] request_id={} ALLOWED", request_id);
+            }
+            Ok(Ok(false)) => {
+                info!("[Consent] request_id={} DENIED by user", request_id);
+                return HttpResponse::Forbidden().body("denied");
+            }
+            Ok(Err(_)) | Err(_) => {
+                warn!(
+                    "[Consent] request_id={} timed out (no decision in {:?})",
+                    request_id, CONSENT_TIMEOUT
+                );
+                data.consent.drop_request(&request_id);
+                return HttpResponse::RequestTimeout().body("timeout");
+            }
+        }
+    }
+    // -----------------------------------------------------------------------
 
     // Set status to Proving
     {
@@ -108,6 +156,7 @@ pub async fn handle_challenge(
         proof_bytes: proof_batch,
         seed,
         iteration,
+        consent_wait_ms,
     };
 
     let json_resp = serde_json::to_string(&response).unwrap();
@@ -161,6 +210,31 @@ pub async fn handle_inclusion_proofs(
     let encrypted_resp = crate::crypto::encrypt_aes(&json_resp, &data.config.aes_secret_key);
 
     HttpResponse::Ok().body(encrypted_resp)
+}
+
+// ============ /pending-consent (GET) and /consent (POST) ============
+
+/// Lists currently-pending consent requests so the browser extension can
+/// show them to the user. Plain JSON, no encryption — siteId is meant for
+/// display.
+pub async fn list_pending_consent(data: web::Data<AppState>) -> HttpResponse {
+    HttpResponse::Ok().json(data.consent.list())
+}
+
+/// Receives the user's allow/deny decision from the browser extension.
+pub async fn submit_consent(
+    data: web::Data<AppState>,
+    body: web::Json<ConsentDecision>,
+) -> HttpResponse {
+    let resolved = data.consent.resolve(&body.request_id, body.allow);
+    if resolved {
+        HttpResponse::Ok().json(serde_json::json!({ "ok": true }))
+    } else {
+        HttpResponse::NotFound().json(serde_json::json!({
+            "ok": false,
+            "error": "unknown or already-resolved request_id"
+        }))
+    }
 }
 
 // ============ Helper Functions ============
